@@ -66,6 +66,7 @@ class	aacHandler {
 public:
 		aacHandler		(int);
 		~aacHandler		();
+	bool		ok;			// the library was loaded and has all functions
 	
 
 	pfn_aacDecoder_Open		aacDecoder_Open;

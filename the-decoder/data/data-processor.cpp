@@ -28,6 +28,9 @@
 #include	"drm-decoder.h"
 #include	"state-descriptor.h"
 #include	"data-processor.h"
+#include	"data-hub.h"
+#include	"service-diag.h"
+#include	<vector>
 
 
 	dataProcessor::dataProcessor	(stateDescriptor *theState,
@@ -81,19 +84,60 @@ int16_t	startPosB	= 0;
 	for (i = 0; i < theState -> numofStreams; i ++) 
 	   startPosB += theState -> streams [i]. lengthHigh;
 
-	for (i = 0; i < theState -> numofStreams; i ++) {
+	for (i = 0; i < theState -> numofStreams && i < 4; i ++) {
 	   int16_t lengthA = theState -> streams [i]. lengthHigh;
 	   int16_t lengthB = theState -> streams [i]. lengthLow;
 	   if ((theState -> streams [i]. soort ==
 	                       stateDescriptor::AUDIO_STREAM) && 
 	                         (theState -> getAudioChannel () == i)) {
+	      if (theState -> diag != nullptr)
+	         theState -> diag -> noteAudio (i);
 	      process_audio (v, i, startPosA, lengthA,
 	                           startPosB, lengthB);
-	      break;
 	   }
+	   else
+	   if (theState -> streams [i]. soort == stateDescriptor::DATA_STREAM)
+	      process_data (v, i, startPosA, lengthA,
+	                          startPosB, lengthB, size);
 	   startPosA	+= lengthA;
 	   startPosB	+= lengthB;
 	}
+}
+//
+//	A data stream: the bits of the high protected part and then of the
+//	low protected part are packed into bytes and handed to the data hub,
+//	which lives in the decoder (it must survive reconfigurations).
+void	dataProcessor::process_data (uint8_t *v, int16_t mscIndex,
+	                              int16_t startHigh, int16_t lengthHigh,
+	                              int16_t startLow,  int16_t lengthLow,
+	                              int16_t totalBytes) {
+dxdata::DataHub	*hub	= m_form -> dataHub ();
+	if (hub == nullptr)
+	   return;
+	if (lengthHigh < 0 || lengthLow < 0 || startHigh < 0 || startLow < 0)
+	   return;
+	if (startHigh + lengthHigh > totalBytes ||
+	    startLow + lengthLow > totalBytes)
+	   return;				// would read outside the frame
+auto &st	= theState -> streams [mscIndex];
+	hub -> configureStream (mscIndex, st. packetModeInd != 0,
+	                        st. dataPacketLength, st. packetId,
+	                        st. domain, st. applicationId, st. FEC != 0);
+std::vector<uint8_t> bytes ((size_t)lengthHigh + (size_t)lengthLow);
+size_t	n	= 0;
+	for (int16_t i = 0; i < lengthHigh; i ++) {
+	   uint8_t b = 0;
+	   for (int k = 0; k < 8; k ++)
+	      b = (b << 1) | (v [(startHigh + i) * 8 + k] & 01);
+	   bytes [n ++] = b;
+	}
+	for (int16_t i = 0; i < lengthLow; i ++) {
+	   uint8_t b = 0;
+	   for (int k = 0; k < 8; k ++)
+	      b = (b << 1) | (v [(startLow + i) * 8 + k] & 01);
+	   bytes [n ++] = b;
+	}
+	hub -> feedStream (mscIndex, bytes. data (), bytes. size ());
 }
 //
 //	Finally, we are here. We have a segment v with length l

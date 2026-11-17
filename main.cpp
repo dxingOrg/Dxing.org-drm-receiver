@@ -25,6 +25,7 @@
 #include	<QApplication>
 #include	<QSettings>
 #include	<QDir>
+#include	<QIcon>
 #include	<unistd.h>
 #include	"radio.h"
 #include	"radio-constants.h"
@@ -51,7 +52,7 @@ QString fileName;
 }
 
 #define	DEFAULT_INI	".drm-radio.ini"
-#define	STATION_LIST	".drm-radio-stations.bin"
+#define	STATION_LIST	".drm-radio-stations.txt"
 #define	BAND_PLAN	".sw-bandplan.xml"
 
 int	main (int argc, char **argv) {
@@ -66,7 +67,7 @@ QString	bandplanFile	= QDir::homePath ();
 
 	QCoreApplication::setOrganizationName ("Lazy Chair Computing");
         QCoreApplication::setOrganizationDomain ("Lazy Chair Computing");
-        QCoreApplication::setApplicationName ("drm-radio");
+        QCoreApplication::setApplicationName ("Dxing.org DRM receiver");
         QCoreApplication::setApplicationVersion (QString (CURRENT_VERSION) + " Git: " + GITHASH);
 
         iniFile. append ("/");
@@ -100,7 +101,7 @@ QString	bandplanFile	= QDir::homePath ();
         QGuiApplication::setAttribute (Qt::AA_EnableHighDpiScaling);
 #endif
 	QApplication a (argc, argv);
-
+	a. setWindowIcon (QIcon (":/dxing-logo.png"));
 
 	QLabel testlabel;
 	fprintf (stderr, "bij F\n");

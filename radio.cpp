@@ -21,6 +21,9 @@
  *    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 #include	<unistd.h>
+#include	<QCoreApplication>
+#include	<QToolTip>
+#include	<QCursor>
 #include	<QSettings>
 #include	<QDebug>
 #include	<QDateTime>
@@ -49,6 +52,12 @@
 #ifdef	HAVE_HACKRF
 #include	"hackrf-handler.h"
 #endif
+#ifdef	HAVE_AIRSPY
+#include	"airspy-handler.h"
+#endif
+#ifdef	HAVE_AIRSPYHF
+#include	"airspyhf-handler.h"
+#endif
 #ifdef	HAVE_RTLSDR
 #include	"rtlsdr-handler.h"
 #endif
@@ -66,7 +75,9 @@
 #define	D_SDRPLAY_V3	"sdrplay"
 #define	D_RTL_TCP	"rtl_tcp"
 #define	D_HACKRF	"hackrf"
-#define	D_RTLSDR	"dabstick"
+#define	D_AIRSPY	"AirSpy R2"
+#define	D_AIRSPYHF	"AirSpy HF+ Discovery"
+#define	D_RTLSDR	"RTL-SDR"
 #define	D_SPYSERVER	"spyserver_client"
 #define	D_CARDREADER	"card-reader"
 static 
@@ -79,6 +90,12 @@ const char *deviceTable [] = {
 #endif
 #ifdef	HAVE_HACKRF
 	D_HACKRF,
+#endif
+#ifdef	HAVE_AIRSPY
+	D_AIRSPY,
+#endif
+#ifdef	HAVE_AIRSPYHF
+	D_AIRSPYHF,
 #endif
 #ifdef	HAVE_RTLSDR
 	D_RTLSDR,
@@ -144,9 +161,17 @@ QString	FrequencytoString (int32_t freq) {
 	theBand. currentOffset	= 0;
 	theBand. lowF		= -5000;
 	theBand. highF		= 5000;
-	mouseIncrement		= 5;
+	mouseIncrement		= settings -> value ("mouseIncrement", 5000). toInt ();
+	if ((mouseIncrement < 1) || (mouseIncrement > 100000))
+	   mouseIncrement	= 5000;
 //	scope and settings
-	hfScopeSlider	-> setValue (50);
+//	0 = Auto, 1 .. 100 = % of the level range shown; keyboard and
+//	mouse wheel work on it as well as the mouse: arrows 1, PageUp/Down 5
+	hfScopeSlider	-> setRange (0, 100);
+	hfScopeSlider	-> setSingleStep (1);
+	hfScopeSlider	-> setPageStep (5);
+	hfScopeSlider	-> setFocusPolicy (Qt::WheelFocus);
+	hfScopeSlider	-> setValue (20);
 	hfScope		= new fftScope (hfSpectrum,
 	                                displaySize,
 	                                kHz (1),        // scale
@@ -188,6 +213,12 @@ QString	FrequencytoString (int32_t freq) {
 	connect (freqButton, SIGNAL (clicked ()),
 	         this, SLOT (handle_freqButton ()));
 
+//	step of the up/down buttons, in Hz: 1 Hz .. 100 kHz, 5 kHz at the start
+	mouse_Inc	-> setRange (1, 100000);
+	mouse_Inc	-> setSuffix (" Hz");
+	mouse_Inc	-> setStepType (QAbstractSpinBox::AdaptiveDecimalStepType);
+	mouse_Inc	-> setValue (mouseIncrement);
+	set_mouseIncrement (mouseIncrement);	// also sets the tooltips
 	connect (mouse_Inc, SIGNAL (valueChanged (int)),
 	         this, SLOT (set_mouseIncrement (int)));
 	connect (upButton, SIGNAL (clicked ()),
@@ -202,10 +233,14 @@ QString	FrequencytoString (int32_t freq) {
 
 	myList  = new programList (this, stationList);
 	myList  -> show ();
-	myLine	= NULL;
+	myLine		= NULL;
+	myLineContainer	= NULL;
+	myLinePrompt	= NULL;
 	audioHandler    -> selectDefaultDevice ();
 
+	closing			= false;
 	theDevice		= nullptr;
+	updateScaleToolTip (false);
 	delayCount		= 0;
 	dumpfilePointer		= nullptr;
 
@@ -247,6 +282,7 @@ QString	FrequencytoString (int32_t freq) {
 	   theDevice 	= setDevice (settings, &inputData);
 	   if (theDevice != nullptr) {
 	      hfScope	 -> set_bitDepth (theDevice -> bitDepth ());
+	      updateScaleToolTip (false);
 	      connect (theDevice, SIGNAL (dataAvailable (int)),
 	               this, SLOT (sampleHandler (int)));
 	      fprintf (stderr, "Device hier?\n");
@@ -264,15 +300,19 @@ void    RadioInterface::quickStart () {
 	            this, SLOT (quickStart ()));
 	fprintf (stderr, "going for quickStart\n");
 	delete starter;
-	if (getDevice (deviceTable [startKnop], settings, &inputData) == nullptr)
-	   if (setDevice (settings, &inputData) == nullptr) {
-	      hfScope	 -> set_bitDepth (theDevice -> bitDepth ());
-	      connect (theDevice, SIGNAL (dataAvailable (int)),
-	               this, SLOT (sampleHandler (int)));
-	      theDevice	-> restartReader ();
-	   }
-	   else
+	theDevice = getDevice (deviceTable [startKnop], settings, &inputData);
+	if (theDevice == nullptr) {
+	   fprintf (stderr,
+	            "quick-start device failed to open, showing selector\n");
+	   theDevice = setDevice (settings, &inputData);
+	   if (theDevice == nullptr)
 	      throw (31);
+	}
+	hfScope	 -> set_bitDepth (theDevice -> bitDepth ());
+	      updateScaleToolTip (false);
+	connect (theDevice, SIGNAL (dataAvailable (int)),
+	         this, SLOT (sampleHandler (int)));
+	theDevice	-> restartReader ();
 }
 
 //      The end of all
@@ -281,6 +321,13 @@ void    RadioInterface::quickStart () {
 //
 //	If the user quits before selecting a device ....
 void	RadioInterface::handle_quitButton	(void) {
+//	sampleHandler () can be on the stack further down (it calls
+//	processEvents ()), so from here on it must not touch anything
+	if (closing)
+	   return;
+	closing		= true;
+	secondsTimer. stop ();
+	myList		-> saveTable ();	// first: closing the receiver may hang
 	if (theDevice != NULL) {
 	   theDevice	-> stopReader ();
 	   disconnect (theDevice, SIGNAL (dataAvailable (int)),
@@ -289,16 +336,16 @@ void	RadioInterface::handle_quitButton	(void) {
 	}
 	fprintf (stderr, "device is gone, go\n");
 	fprintf (stderr, "device is deleted\n");
-	myList          -> saveTable ();
 	myList		-> hide ();
 
 	fprintf (stderr, "we kappen ermee\n");
 	delete		theDecoder;
-	secondsTimer. stop ();
 	delete		myList;
 	delete []	outTable;
 	delete		hfScope;
 	delete		mykeyPad;
+//	data-available signals already queued must not reach the deleted objects
+	QCoreApplication::removePostedEvents (this, QEvent::MetaCall);
 }
 
 deviceHandler	*RadioInterface::
@@ -323,6 +370,11 @@ QStringList devices;
 	      return nullptr;
 	   fprintf (stderr, "we go for %s\n", s. toLatin1 (). data ());
 	   theDevice	= getDevice (s, settings, hfBuffer);
+	   if (theDevice == nullptr) {
+	      fprintf (stderr, "could not open %s, pick again\n",
+	                             s. toLatin1 (). data ());
+	      continue;
+	   }
 	   theDevice -> restartReader ();
 	   fprintf (stderr, "Hebben we een device?\n");
 	}
@@ -355,6 +407,24 @@ deviceHandler	*RadioInterface::
 	if (s == D_HACKRF) {
 	   try {
 	      return  new hackrfHandler (this, settings, b);
+	   } catch (int e) {
+	   }
+	}
+	else
+#endif
+#ifdef HAVE_AIRSPY
+	if (s == D_AIRSPY) {
+	   try {
+	      return  new airspyHandler (this, settings, b);
+	   } catch (int e) {
+	   }
+	}
+	else
+#endif
+#ifdef HAVE_AIRSPYHF
+	if (s == D_AIRSPYHF) {
+	   try {
+	      return  new airspyhfHandler (this, settings, b);
 	   } catch (int e) {
 	   }
 	}
@@ -437,6 +507,12 @@ void	RadioInterface::setFrequency (int32_t frequency) {
 	QString ff	= FrequencytoString (selectedFrequency);
 	frequencyDisplay	-> display (ff);
 	bandLabel		-> setText (my_bandPlan -> getFrequencyLabel (selectedFrequency));
+//
+//	the user is now listening to a different frequency: drop any
+//	"locked on a station" state left over from the previous one,
+//	rather than leaving a stale station name/indicators on screen.
+	if (theDecoder != nullptr)
+	   theDecoder	-> resetDisplay ();
 }
 //
 //	adjustFrequency is called whenever clicking the mouse
@@ -473,6 +549,12 @@ int	currOff	= theBand. currentOffset;
 //	bandLabel	-> setAutoFillBackground (true);
 //	bandLabel	-> setPalette (labelPalette);
 	bandLabel	-> setText (my_bandPlan -> getFrequencyLabel (freq));
+//
+//	A jump of 1 kHz or more (up/down buttons, click in the spectrum) means
+//	a different station is wanted: drop the old station's name and
+//	indicators. Fine tuning by a few Hz keeps the lock, so is left alone.
+	if (((n >= 1000) || (n <= -1000)) && (theDecoder != nullptr))
+	   theDecoder	-> resetDisplay ();
 }
 
 
@@ -492,23 +574,49 @@ int32_t	RadioInterface::get_centerFrequency	() {
 }
 //
 void    RadioInterface::set_freqSave    () {
-	if (myLine == NULL)
-	   myLine  = new QLineEdit ();
-	myLine  -> show ();
-	connect (myLine, SIGNAL (returnPressed (void)),
-	         this, SLOT (handle_myLine (void)));
+	if (myLineContainer == NULL) {
+	   myLineContainer	= new QWidget ();
+	   myLineContainer	-> setWindowTitle ("Save station");
+	   myLinePrompt		= new QLabel ("Enter a name for the radio station");
+	   myLine		= new QLineEdit ();
+	   QVBoxLayout *lay	= new QVBoxLayout ();
+	   lay	-> addWidget (myLinePrompt);
+	   lay	-> addWidget (myLine);
+	   myLineContainer	-> setLayout (lay);
+	   connect (myLine, SIGNAL (returnPressed (void)),
+	            this, SLOT (handle_myLine (void)));
+	}
+//
+//	pre-fill with the station name as currently decoded from the
+//	signal, if any - the user can still overtype it or append to it
+	if (theDecoder != nullptr)
+	   myLine	-> setText (theDecoder -> getServiceName ());
+	myLine	-> selectAll ();
+	myLineContainer	-> show ();
+	myLine		-> setFocus ();
 }
 
 void    RadioInterface::handle_myLine () {
 QString programName     = myLine -> text ();
 	myList  -> addRow (programName, QString::number (selectedFrequency / Khz (1)));
-	disconnect (myLine, SIGNAL (returnPressed (void)),
-	            this, SLOT (handle_myLine (void)));
-	myLine  -> hide ();
+	myLineContainer  -> hide ();
+}
+
+static
+QString stepText (int32_t inc) {
+	if (inc >= 1000)
+	   return QString::number (inc / 1000.0, 'g', 6) + " kHz";
+	return QString::number (inc) + " Hz";
 }
 
 void	RadioInterface::set_mouseIncrement (int inc) {
 	mouseIncrement = inc;
+	settings	-> setValue ("mouseIncrement", inc);
+	QString t	= stepText (inc);
+	mouse_Inc	-> setToolTip (tr ("Tuning step of the up and down buttons: %1\n"
+	                              "Type a value from 1 to 100000 Hz, or use the arrows."). arg (t));
+	upButton	-> setToolTip (tr ("Tune up by %1"). arg (t));
+	downButton	-> setToolTip (tr ("Tune down by %1"). arg (t));
 }
 
 void	RadioInterface::wheelEvent (QWheelEvent *e) {
@@ -532,8 +640,25 @@ std::complex<float>   buffer [theDecimator. inSize ()];
 std::complex<float> ifBuffer [theDecimator. outSize ()];
 float dumpBuffer [2 * 512];
 
+int	chunkCount	= 0;
+
 	(void)amount;
+	if (closing)
+	   return;
 	while (inputData. GetRingBufferReadAvailable () > 512) {
+//
+//	On a host that cannot keep up with the incoming sample rate
+//	in real time, this loop can end up processing a large and
+//	ever-growing backlog in one go, which blocks the Qt event
+//	loop for as long as it takes - the window stops repainting
+//	and even the close ("X") button stops responding. Yielding
+//	back to the event loop every so often keeps the UI alive
+//	(and closable) even while catching up on a backlog.
+	   if (++chunkCount % 32 == 0) {
+	      QCoreApplication::processEvents ();
+	      if (closing)		// "X" was answered Yes in there:
+	         return;		// the objects below are gone
+	   }
 	   inputData. getDataFromBuffer (buffer, 512);
 	   hfScope	-> addElements (buffer, 512);
 	   if (dumpfilePointer != NULL) {
@@ -566,6 +691,36 @@ float dumpBuffer [2 * 512];
 //
 void    RadioInterface::set_hfscopeLevel (int level) {
 	hfScope -> setLevel (level);
+	updateScaleToolTip (true);
+}
+
+//	The tooltip of the scale slider: its value in %, what that means in dB
+//	for the receiver in use, and how to set it exactly. While the slider is
+//	being changed the text is shown at once, so the value can be read.
+void	RadioInterface::updateScaleToolTip (bool show) {
+int	level	= hfScopeSlider -> value ();
+int	bd	= (theDevice != nullptr) ? theDevice -> bitDepth () : 12;
+QString	t;
+
+	if (level <= 0)
+	   t = tr ("Spectrum scale: Auto\n"
+	           "Fits the strongest signal in view, so weak and strong signals "
+	           "both show.");
+	else
+	   t = tr ("Spectrum scale: %1 %\n"
+	           "The display shows the lowest %2 dB above the noise floor.\n"
+	           "Lower = more zoom, for weak signals.").
+	             arg (level).
+	             arg (level / 100.0 * bd * 6.0206, 0, 'f', 1);
+	t += tr ("\nArrow keys or mouse wheel: 1 step. PageUp / PageDown: 5 steps.\n"
+	         "Home (or all the way down): Auto.");
+	hfScopeSlider	-> setToolTip (t);
+	if (show && (hfScopeSlider -> underMouse () || hfScopeSlider -> hasFocus ())) {
+	   QPoint p = hfScopeSlider -> underMouse () ? QCursor::pos () :
+	       hfScopeSlider -> mapToGlobal (QPoint (hfScopeSlider -> width (),
+	                                             hfScopeSlider -> height () / 2));
+	   QToolTip::showText (p, t, hfScopeSlider);
+	}
 }
 
 //	do not forget that ocnt starts with 1, due
@@ -676,7 +831,7 @@ SF_INFO	*sf_info	= (SF_INFO *)alloca (sizeof (SF_INFO));
 void RadioInterface::closeEvent (QCloseEvent *event) {
 
 	QMessageBox::StandardButton resultButton =
-	                QMessageBox::question (this, "dabRadio",
+	                QMessageBox::question (this, "Dxing.org DRM radio",
 	                                       tr("Are you sure?\n"),
 	                                       QMessageBox::No | QMessageBox::Yes,
 	                                       QMessageBox::Yes);

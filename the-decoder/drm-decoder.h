@@ -40,6 +40,11 @@
 #include	"backend-controller.h"
 #include	"state-descriptor.h"
 #include	"my-array.h"
+#include	"data-hub.h"
+#include	"journaline.h"
+#include	"service-info.h"
+#include	"mot.h"
+#include	"data-broadcast.h"
 //	for the fdk-aac functionw we have
 #ifdef	__WITH_FDK_AAC__
 #ifdef	__MINGW32__
@@ -49,6 +54,11 @@
 class	EQDisplay;
 class	IQDisplay;
 class	QSettings;
+class	DataInspector;
+class	JournalineWindow;
+class	MotWindow;
+class	ServiceInfoWindow;
+class	QTimer;
 
 #include	"ui_drmdecoder.h"
 
@@ -64,8 +74,38 @@ public:
 	virtual ~drmDecoder ();
         void    processBuffer	(std::complex<float> *, int length);
         void    process		(std::complex<float>);
+//
+//	Called whenever the user tunes to a different frequency, so
+//	the screen does not keep showing the previous station's name
+//	and "locked" indicators while searching for a new signal.
+//	Also used by the reset button in the decoder window.
+	void	resetDisplay		();
+//
+//	the station name as currently decoded from the signal (SDC/FAC),
+//	e.g. for pre-filling the "save frequency" dialog.
+	QString	getServiceName		() const;
+//	the data services hub: lives as long as the decoder, written by the
+//	decoder thread (dataProcessor), read by the inspector window
+	dxdata::DataHub	*dataHub		() { return &theDataHub; }
+protected:
+//	This window cannot be reopened once closed (there is no menu
+//	entry for it), so its own close ("X") button is disabled here;
+//	the main "Dxing.org DRM receiver" window is the one, unambiguous
+//	way to quit the whole program.
+	bool	eventFilter		(QObject *, QEvent *) override;
 
 private:
+	dxdata::DataHub		theDataHub;	// declared first: destroyed last
+	dxdata::JournalineDecoder theJournaline;
+	dxdata::SdcInfo		theSdcInfo;
+	dxdata::MotDecoder	theMot;
+	dxdata::DataBroadcastDecoder theDb;
+	DataInspector		*dataInspector;
+	JournalineWindow	*journalineWindow;
+	ServiceInfoWindow	*serviceInfoWindow;
+	bool			serviceInfoAlarm	= false;
+	MotWindow		*motWindow;
+	QTimer			*dataTimer;
 	QFrame			myFrame;
 	QSettings		*drmSettings;
 	RingBuffer<std::complex<float>> *audioOut;
@@ -128,11 +168,21 @@ private:
 	void		addtoSuperFrame		(smodeInfo *,
                                                  int16_t,
 	                                         myArray<theSignal> *);
+private:
+	QString		serviceLabel [4];	// GUI copy of the service labels
+	void		showChosenService	();
 private slots:
 	void		select_channel_1	();
 	void		select_channel_2	();
         void            handle_modeSelector     (const QString &);
 	void		handle_reset		();
+	void		handle_dataButton	();
+	void		handle_journalineButton	();
+	void		handle_serviceInfoButton	();
+	void		showAacMissing		();
+	void		handle_slideshowButton	();
+	void		handle_motButton	();
+	void		updateDataButtons	();
 
 public slots:
 	void            set_faadSyncLabel	(bool);

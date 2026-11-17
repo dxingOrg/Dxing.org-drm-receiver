@@ -108,6 +108,10 @@ uint16_t        res     = 0;
 
 
 	currentRate			= 0;
+	producedSeconds			= 0;
+	concealedSeconds		= 0;
+	lastConcealed			= false;
+	afsCount			= 0;
 	theConverter			= nullptr;
 	frameBuffer. resize (0);
 	borders. resize (0);
@@ -148,6 +152,22 @@ int	failure		= 0;
 	   faadSuccess (false);
 	   return;
 	}
+
+//	every 5 super frames (2 seconds): how many seconds of sound came out
+//	per 0.4 s of broadcast? 1.00 is right; 0.50 would mean double speed.
+//	(Frames cross super frame borders, so a single reading can be a few
+//	percent off.)
+	if (afsCount >= 5) {
+	   speedText	= QString (" %1x"). arg (producedSeconds / (afsCount * 0.4),
+	                                     0, 'f', 2);
+	   if (concealedSeconds > 0)
+	      speedText	+= QString ("+%1"). arg (concealedSeconds / (afsCount * 0.4),
+	                                         0, 'f', 2);
+	   afsCount	= 0;
+	   producedSeconds = 0;
+	   concealedSeconds = 0;
+	}
+	afsCount ++;
 
 	if (textFlag != 0) {
 	   my_messageProcessor.
@@ -275,6 +295,10 @@ void	xheaacProcessor::playOut (std::vector<uint8_t> &f,
 	                          int size, int index) {
 static
 bool		convOK = false;
+static
+int16_t	lastCnt	= 0;
+static
+int32_t	lastRate = 0;
 int16_t	cnt;
 int32_t	rate;
 float ff = 0;
@@ -285,11 +309,28 @@ float ff = 0;
 	             &convOK,
 	             outBuffer, &cnt, &rate);
 	if (convOK) {
-	   good ++;
+	   if (lastConcealed)			// substitute made by the decoder
+	      fout ++;
+	   else
+	      good ++;
+	   if (rate > 0) {
+	      if (lastConcealed)
+	         concealedSeconds	+= cnt / (double)rate;
+	      else
+	         producedSeconds	+= cnt / (double)rate;
+	   }
+	   lastCnt	= cnt;
+	   lastRate	= rate;
 	   writeOut (outBuffer, cnt, rate);
 	}
 	else {
 	   fout ++;
+//	a frame that cannot be decoded still takes its time: play silence for
+//	it, otherwise the good parts are joined together and speech sounds hurried
+	   if (lastCnt > 0 && lastRate > 0) {
+	      memset (outBuffer, 0, 2 * (size_t)lastCnt * sizeof (int16_t));
+	      writeOut (outBuffer, lastCnt, lastRate);
+	   }
 	}
 
 	if (good + fout >= 10) {
@@ -425,11 +466,33 @@ int	flags		= 0;
 	   fprintf (stderr, "fdk-aac errorstatus %x\n",
 	                                errorStatus);
 #endif
+	lastConcealed	= false;
 	if (errorStatus == AAC_DEC_NOT_ENOUGH_BITS) {
 	   *conversionOK	= false;
 	   *samples		= 0;
 	   faadSuccess (false);
 	   return;
+	}
+
+//	A damaged frame: ask the decoder for a substitute signal for it. That
+//	keeps its state going, so the frames after it can be decoded. The
+//	old way (restart with AACDEC_INTR) kept it silent until the next frame
+//	that can be decoded on its own. If the library cannot do it, the old
+//	behaviour remains.
+	if (errorStatus != AAC_DEC_OK) {
+	   AAC_DECODER_ERROR cerr =
+#ifdef	__MINGW32__
+	        aacFunctions -> aacDecoder_DecodeFrame (handle,
+	                                                localBuffer,
+	                                                2 * 2048, AACDEC_CONCEAL);
+#else
+	        aacDecoder_DecodeFrame (handle, localBuffer, 2 * 2048,
+	                                                AACDEC_CONCEAL);
+#endif
+	   if (cerr == AAC_DEC_OK) {
+	      errorStatus	= AAC_DEC_OK;
+	      lastConcealed	= true;
+	   }
 	}
 
 	if (errorStatus != AAC_DEC_OK) {
@@ -457,12 +520,13 @@ int	flags		= 0;
 	if (fdk_info -> numChannels == 2) {
 	   for (int i = 0; i < fdk_info -> frameSize; i ++) {
 	      buffer [2 * i] 	= localBuffer [2 * i];
-	      buffer [2 * i + 1] = localBuffer [2 * i + i];
+	      buffer [2 * i + 1] = localBuffer [2 * i + 1];	// was "2 * i + i"
 	   }
 	}
 
 	QString text = QString::number (fdk_info -> sampleRate);
 	text += fdk_info -> numChannels == 2 ? " stereo" : " mono";
+	text += speedText;
 	set_aacDataLabel (text);
 	
 #if 0

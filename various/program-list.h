@@ -49,6 +49,7 @@ private slots:
 signals:
 	void	newFrequency	(int32_t);
 private:
+	void	appendRow	(const QString &, const QString &);
 	QScrollArea		*myWidget;
 	QTableWidget	*tableWidget;
 	QString		saveName;

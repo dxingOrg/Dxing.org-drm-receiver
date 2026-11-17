@@ -19,6 +19,7 @@
  *    You should have received a copy of the GNU General Public License
  *    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
+#include	<QKeyEvent>
 #include	"popup-keypad.h"
 #include	"radio.h"
 
@@ -55,9 +56,9 @@ QString FrequencytoString (int32_t freq) {
 	theLayout	-> addWidget (eightButton, 3, 2);
 	nineButton	= new QPushButton ("9");
 	theLayout	-> addWidget (nineButton, 3, 3);
-	KHzButton	= new QPushButton ("Khz");
+	KHzButton	= new QPushButton ("kHz");
 	theLayout	-> addWidget (KHzButton, 4, 1);
-	MHzButton	= new QPushButton ("Mhz");
+	MHzButton	= new QPushButton ("MHz");
 	theLayout	-> addWidget (MHzButton, 4, 3);
 	zeroButton	= new QPushButton ("0");
 	theLayout	-> addWidget (zeroButton, 4, 2);
@@ -67,9 +68,19 @@ QString FrequencytoString (int32_t freq) {
 	theLayout	-> addWidget (correctButton, 5, 3);
 	theDisplay	= new QLCDNumber (8);
 	theDisplay	-> setMode (QLCDNumber::Dec);
-	theDisplay	-> setSegmentStyle (QLCDNumber::Flat);
+//	"Filled" segments read as visually heavier/bolder than "Flat",
+//	and a taller widget makes the digits easier to pick out.
+	theDisplay	-> setSegmentStyle (QLCDNumber::Filled);
+	theDisplay	-> setMinimumHeight (48);
 	theLayout	-> addWidget (theDisplay, 5, 2);
 	theFrame	-> setLayout (theLayout);
+	theFrame	-> setWindowTitle ("Select frequency");
+//
+//	allow typing the frequency on the hardware keyboard too,
+//	next to the on-screen keypad: digits 0-9, K for kHz, M for
+//	MHz, Backspace to correct, Escape/Delete to clear.
+	theFrame	-> setFocusPolicy (Qt::StrongFocus);
+	theFrame	-> installEventFilter (this);
 
 	thePad		-> addButton (zeroButton, 0);
 	thePad		-> addButton (oneButton, 1);
@@ -117,6 +128,7 @@ QString FrequencytoString (int32_t freq) {
 //
 void	keyPad::showPad	(void) {
 	theFrame	-> show ();
+	theFrame	-> setFocus ();
 	shown		= true;
 	panel		= 0;
 }
@@ -160,5 +172,36 @@ void	keyPad::collectData	(int id) {
 	   QString xx = FrequencytoString (panel);
 	   theDisplay	-> display (xx);
 	}
+}
+//
+bool	keyPad::eventFilter	(QObject *obj, QEvent *ev) {
+	if ((obj == theFrame) && (ev -> type () == QEvent::KeyPress)) {
+	   QKeyEvent *kEv = static_cast<QKeyEvent *>(ev);
+	   int key = kEv -> key ();
+	   if ((key >= Qt::Key_0) && (key <= Qt::Key_9)) {
+	      collectData (key - Qt::Key_0);
+	      return true;
+	   }
+	   switch (key) {
+	      case Qt::Key_K:
+	      case Qt::Key_Return:
+	      case Qt::Key_Enter:
+	         collectData (101);		// kHz
+	         return true;
+	      case Qt::Key_M:
+	         collectData (102);		// MHz
+	         return true;
+	      case Qt::Key_Escape:
+	      case Qt::Key_Delete:
+	         collectData (103);		// clear
+	         return true;
+	      case Qt::Key_Backspace:
+	         collectData (104);		// correct
+	         return true;
+	      default:
+	         break;
+	   }
+	}
+	return QObject::eventFilter (obj, ev);
 }
 

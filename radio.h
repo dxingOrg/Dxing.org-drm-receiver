@@ -27,6 +27,8 @@
 #include        <QTimer>
 #include        <QWheelEvent>
 #include        <QLineEdit>
+#include        <QLabel>
+#include        <QVBoxLayout>
 #include	<QTimer>
 #include	<sndfile.h>
 #include        "ui_newradio.h"
@@ -59,6 +61,7 @@ public:
 	int32_t		get_selectedFrequency	();
 	int32_t		get_centerFrequency	();
 private:
+	bool		closing;	// set once the program is shutting down
         RingBuffer<std::complex<float> > inputData;
         RingBuffer<std::complex<float> > audioData;
 
@@ -88,7 +91,7 @@ private:
 	fftFilter	hfFilter;
 	shifter		hfShifter;
 	decimator	theDecimator;
-	int16_t		mouseIncrement;
+	int32_t		mouseIncrement;
 	int16_t		delayCount;
 	void		set_inMiddle	();
 
@@ -106,7 +109,10 @@ private:
         keyPad          *mykeyPad;
         programList     *myList;
         QLineEdit       *myLine;
+        QWidget         *myLineContainer;
+        QLabel          *myLinePrompt;
         void            adjust          (int32_t);
+        void            updateScaleToolTip	(bool);
 	
 private slots:
         deviceHandler	*getDevice		(const QString &,

@@ -174,7 +174,7 @@ QString	temp;
 //	OK, now open the hardware
 	res	= this -> rtlsdr_open (&device, deviceIndex);
 	if (res < 0) {
-	   fprintf (stderr, "Opening dabstick failed\n");
+	   fprintf (stderr, "Opening RTL-SDR failed\n");
 	   statusLabel	-> setText ("opening failed");
 	   goto err;
 	}

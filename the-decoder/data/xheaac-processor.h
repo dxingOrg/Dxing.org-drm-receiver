@@ -64,6 +64,12 @@ private:
 	messageProcessor	my_messageProcessor;
 	void		resetBuffers	();
 	int		currentRate;
+//	diagnostics: the audio produced per 400 ms audio super frame
+	double		producedSeconds;
+	double		concealedSeconds;
+	bool		lastConcealed;
+	int		afsCount;
+	QString		speedText;
 	std::vector<uint8_t>
         		getAudioInformation (stateDescriptor *drm,
                                                         int streamId);

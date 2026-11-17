@@ -36,6 +36,8 @@ public:
 	void	showPad		(void);
 	void	hidePad		(void);
 	bool	isVisible	(void);
+protected:
+	bool	eventFilter	(QObject *, QEvent *) override;
 private slots:
 	void	collectData	(int);
 private:

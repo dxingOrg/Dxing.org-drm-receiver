@@ -28,6 +28,8 @@
 #include	<string>
 #include	<vector>
 
+namespace dxdata { class ServiceDiag; class SdcInfo; }
+
 //
 //	The "frame" with all derived components are maintained
 //	in a structure drmFrame
@@ -48,9 +50,23 @@ enum	{
 	void		cleanUp		(void);
 	int		getAudioChannel		();
 	void		activate_channel_1	();
-	void		activate_channel_2	();
-	bool		audio_channel_1;
-	bool		audio_channel_2;
+	bool		activate_channel_2	();	// false: not an audio service
+	void		clearServices		();
+//	diagnostics only: copy the stream table to the recorder (if any)
+	void		publishDiag		();
+	dxdata::ServiceDiag	*diag;	// set by the decoder; not cleared by cleanUp
+	dxdata::SdcInfo	*info;	// idem: service information for the window
+//	The services (short id 0 .. 3) are not the same as the streams: two
+//	services may use the SAME stream (e.g. two labels, one sound). The
+//	SDC tells which stream carries the audio and which the data of a
+//	service; the labels belong to the service. chosenService is the
+//	service the listener selected; it survives a re-synchronisation.
+	int		chosenService;
+	struct {
+	   int		audioStream;	// stream index or -1
+	   int		dataStream;	// stream index or -1
+	   char		label [128];	// UTF-8, empty when not received
+	}		svc [4];
 	bool		set;
 	uint8_t		Mode;		// set by frameProcessor
 	uint8_t		Spectrum;	// set by frameProcessor
@@ -102,6 +118,7 @@ enum	{
 	   int16_t	C;
 	   uint8_t	FEC;
 	   int16_t	packetLength;
+	   int16_t	dataPacketLength;	// from SDC entity 5 only (entity 14 overwrites packetLength)
 	   int16_t	applicationId;
 	   int16_t	startofData;
 	} streams [4];

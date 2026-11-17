@@ -73,7 +73,8 @@ void	fileReader::handle_progressBar		(int f) {
 void	fileReader::setProgress	(int progress,
 	                         float  timelength, float playTime) {
 //	progressBar	-> setValue (progress);
-	progressBar	-> setValue (timelength / playTime * 100);
+	if (playTime > 0)
+	   progressBar	-> setValue ((int)(timelength / playTime * 100));
 	currentTime	-> display (timelength);
 	totalTime	-> display (playTime);
 	

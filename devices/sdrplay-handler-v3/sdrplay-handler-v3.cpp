@@ -706,8 +706,13 @@ ULONG APIkeyValue_length = 255;
 	                    (LPDWORD)&APIkeyValue_length);
 //	Ok, make explicit it is in the 32/64 bits section
 	   wchar_t *x =
+//	The API installer keeps a 32 bit (x86) and a 64 bit (x64) copy of the
+//	DLL; a 64 bit program can only load the 64 bit one.
+#ifdef _WIN64
+	        wcscat (APIkeyValue, (wchar_t *)L"\\x64\\sdrplay_api.dll");
+#else
 	        wcscat (APIkeyValue, (wchar_t *)L"\\x86\\sdrplay_api.dll");
-//	        wcscat (APIkeyValue, (wchar_t *)L"\\x64\\sdrplay_api.dll");
+#endif
 	   RegCloseKey(APIkey);
 
 	   Handle	= LoadLibrary (x);

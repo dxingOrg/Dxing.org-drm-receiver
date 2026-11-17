@@ -27,6 +27,7 @@
 #include	"qam4-metrics.h"
 #include	"mer4-values.h"
 #include	"drm-decoder.h"
+#include	"service-info.h"
 
 #define	FAC_BITS	64
 #define	FAC_CRC		8
@@ -244,6 +245,19 @@ uint8_t shortId		= (v [24] << 1) | v [25];
 	set_serviceLanguage	(shortId, &v [27], st);
 	st	-> streams [shortId]. isAudio = v [31] == 0;
 	set_serviceDescriptor	(shortId, &v [32], st);
+	if (st -> diag != nullptr) {
+	   int lang = (v [27] << 3) | (v [28] << 2) | (v [29] << 1) | v [30];
+	   int desc = (v [32] << 4) | (v [33] << 3) | (v [34] << 2) |
+	                                       (v [35] << 1) | v [36];
+	   st -> diag -> onFacService (shortId, serviceId, v [31] == 0, lang, desc);
+	   st -> publishDiag ();
+	}
+	if (st -> info != nullptr) {
+	   int lang = (v [27] << 3) | (v [28] << 2) | (v [29] << 1) | v [30];
+	   int desc = (v [32] << 4) | (v [33] << 3) | (v [34] << 2) |
+	                                       (v [35] << 1) | v [36];
+	   st -> info -> setFacService (shortId, serviceId, v [31] == 0, lang, desc);
+	}
 }
 
 //	Language is a 4 bit field

@@ -71,6 +71,8 @@ private:
 	int32_t		needle;
 	int32_t		needleBin;
 	int16_t		amplification;
+	bool		autoScale;	// slider at 0: fit the spectrum automatically
+	double		autoAmp;	// the (smoothed) scale in use while in auto mode
 	int64_t		vfo;
 	int16_t		bitDepth;
 	uint8_t		viewMode;

@@ -44,6 +44,7 @@ static AAC_DECODER_ERROR
 }
 	
 	aacHandler::aacHandler		(int dumm) {
+	ok	= false;
 #ifdef	__MINGW32__
 	wchar_t *libname = (wchar_t *)L"libfdk-aac-2.dll";
 	Handle	= LoadLibrary (libname);
@@ -101,6 +102,7 @@ static AAC_DECODER_ERROR
 	   goto Err;
         }
 
+	ok	= true;
 	return;
 
 Err:

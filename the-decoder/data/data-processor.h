@@ -68,6 +68,9 @@ private:
 	int		audioChannel;
 	void	process_audio		(uint8_t *, int16_t,
 	                         	int16_t, int16_t, int16_t, int16_t);
+	void	process_data		(uint8_t *, int16_t,
+	                         	int16_t, int16_t, int16_t, int16_t,
+	                         	int16_t);
 signals:
 	void		set_audioModeLabel (const QString &);
 	void		audioAvailable	();

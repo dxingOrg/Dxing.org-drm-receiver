@@ -109,6 +109,30 @@ bool	messageProcessor::check_CRC (uint8_t *v, int16_t cnt) {
 	return (crc16_bytewise (v, cnt) == 0);
 }
 
+//	The text arrives in pieces of up to 16 bytes, and after each piece
+//	what we have so far is shown. A piece may end in the middle of a
+//	multi-byte UTF-8 character (e.g. the e-acute of "operateur"), which
+//	would show as a replacement character until the next piece arrives.
+//	So an unfinished character at the end is left out of what is shown.
+static
+std::string completeUtf8 (const std::string &s) {
+size_t	i	= s. size ();
+int	back	= 0;			// continuation bytes at the end
+
+	while ((i > 0) && (back < 4) &&
+	       (((uint8_t)s [i - 1] & 0xC0) == 0x80)) {
+	   i --;
+	   back ++;
+	}
+	if (i == 0)
+	   return s;
+uint8_t	lead	= (uint8_t)s [i - 1];
+int	need	= lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
+	if ((need > 1) && (back + 1 < need))
+	   return s. substr (0, i - 1);
+	return s;
+}
+
 void	messageProcessor::addSegment (uint8_t *v, int16_t cnt) {
 int16_t	i;
 uint8_t firstFlag	= (v [0] >> 6) & 01;
@@ -120,7 +144,7 @@ uint8_t lastFlag	= (v [0] >> 5) & 01;
 	    myMessage. push_back (char (v [2 + i]));
 	if (lastFlag != 0)
 	   myMessage. append ("<<<");
-	set_messageLabel (QString::fromStdString (myMessage));
+	set_messageLabel (QString::fromStdString (completeUtf8 (myMessage)));
 }
 
 static

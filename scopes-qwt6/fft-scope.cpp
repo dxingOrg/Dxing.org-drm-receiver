@@ -20,6 +20,7 @@
  *    along with SDR-J; if not, write to the Free Software
  *    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
+#include	<cmath>
 #include	"spectrum-scope.h"
 #include	"waterfall-scope.h"
 #include	"fft-scope.h"
@@ -53,7 +54,10 @@ double	temp;
 	averageCounter			= 0;
 	this	-> fillPointer		= 0;
 	this	-> vfo			= 0;
-	this	-> amplification	= 105 - level;
+//	the slider value is the scale, exactly as setLevel () applies it
+	this	-> amplification	= level;
+	this	-> autoScale		= (level <= 0);
+	this	-> autoAmp		= 20;
 	this	-> needle		= 0;
 	this	-> needleBin		= displaySize / 2;
 	this	-> displayBuffer	= new double [displaySize];
@@ -88,9 +92,10 @@ double	temp;
 	delete		this	-> scope;
 }
 
+//	0 = "Auto", 1 .. 100 = the part (in %) of the level range that is shown
 void	fftScope::setLevel (int16_t sliderValue) {
-	amplification = (double) sliderValue;
-//	amplification = 105 - (double) sliderValue;
+	amplification	= sliderValue;
+	autoScale	= (sliderValue <= 0);
 }
 
 void	fftScope::setZero (int64_t vfo) {
@@ -163,9 +168,40 @@ int32_t	i, j;
                  ((double)vfo - (double)(sampleRate / 2) +
                   (double)((i) * (double) 2 * temp)) / (int32_t)scale;
 
+double	amp	= amplification;
+	if (autoScale) {
+//	"Auto": fit the strongest part of the spectrum. The bottom of the plot is
+//	fixed at the noise floor (bitDepth * 6 dB below full scale), only the top
+//	moves, so the span wanted is the strongest level above that floor plus
+//	some headroom. Bins are averaged with their neighbours first, so a single
+//	narrow spike does not squash the broad signals (like DRM) we look for.
+	   const int W	= 8;
+	   double acc	= 0;
+	   double peak	= 0;
+	   for (i = 0; i < displaySize; i ++) {
+	      acc += displayBuffer [i];
+	      if (i >= W)
+	         acc -= displayBuffer [i - W];
+	      if ((i >= W - 1) && (acc / W > peak))
+	         peak = acc / W;
+	   }
+	   int bd	= ((bitDepth < 1) || (bitDepth > 32)) ? 24 : bitDepth;
+	   double spanDb	= bd * 6.0206;		// 20 log10 (2 ^ bd)
+	   double wanted	= (20 * log10 (peak + 1) * 1.25 + 1.0) / spanDb * 100;
+	   if (wanted < 1)
+	      wanted	= 1;
+	   if (wanted > 100)
+	      wanted	= 100;
+	   if (wanted > autoAmp)		// quick to open up ...
+	      autoAmp	= 0.5 * autoAmp + 0.5 * wanted;
+	   else					// ... slow to close in
+	      autoAmp	= 0.95 * autoAmp + 0.05 * wanted;
+	   amp	= autoAmp;
+	}
+
 	scope -> display (X_axis,
 	                  displayBuffer,
-	                  amplification,
+	                  amp,
 	                  ((quint64)vfo + needle) / (quint64)scale,
 	                  needleBin);
 }

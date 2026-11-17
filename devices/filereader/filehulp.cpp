@@ -47,6 +47,15 @@ SF_INFO	*sf_info;
 	theRate			= rate;
 	readerOK		= false;
 	_I_Buffer		= b;
+	filePointer		= NULL;
+	sampleRate		= 1;
+	samplesinFile		= 0;
+	numofChannels		= 2;
+	totalTime		= 0;
+	fileLength		= 1;
+	currPos			= 0;
+	resetRequest		= false;
+	running. store (false);
 
 	sf_info			= (SF_INFO *)alloca (sizeof (SF_INFO));
 	sf_info	-> format	= 0;
@@ -60,11 +69,12 @@ SF_INFO	*sf_info;
 	}
 
 	samplesinFile	= sf_info	-> frames;
+	fileLength	= samplesinFile > 0 ? samplesinFile : 1;
 	sampleRate	= sf_info	-> samplerate;
 	numofChannels	= sf_info	-> channels;
 	fprintf (stderr, "samplesinfile = %d, sampleRate = %d, channels = %d\n",
 	                      samplesinFile, sampleRate, numofChannels);
-        totalTime       = samplesinFile / sampleRate;
+        totalTime       = (float)samplesinFile / (sampleRate > 0 ? sampleRate : 1);
 	fprintf (stderr, "timetoplay %f\n", totalTime);
 
 	theRate		= rate;

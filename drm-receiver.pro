@@ -16,7 +16,7 @@ QMAKE_LFLAGS	+= -flto
 #QMAKE_CXXFLAGS	+= -fsanitize=address
 #QMAKE_CFLAGS	+= -fsanitize=address
 #QMAKE_LFLAGS	+= -fsanitize=address
-RC_ICONS	=  drm.ico
+RC_ICONS	=  dxing.ico
 RESOURCES       += resources.qrc
 
         DEFINES         +=  __WITH_FDK_AAC__
@@ -108,6 +108,17 @@ HEADERS += ./radio-constants.h \
 	   ./the-decoder/rate-converter.h \
 	   ./the-decoder/data/data-processor.h \
 	   ./the-decoder/data/message-processor.h \
+	   ./the-decoder/data/data-hub.h \
+	   ./the-decoder/data/service-diag.h \
+	   ./the-decoder/data/data-carousel.h \
+	   ./the-decoder/data/service-info.h \
+	   ./the-decoder/data/journaline.h \
+	   ./the-decoder/data/mot.h \
+	   ./the-decoder/data/data-broadcast.h \
+	   ./the-decoder/data-inspector.h \
+	   ./the-decoder/journaline-window.h \
+	   ./the-decoder/service-info-window.h \
+	   ./the-decoder/mot-window.h \
 #	   ./the-decoder/data/up-filter.h \
 	   ./the-decoder/fac/fac-tables.h \
 	   ./the-decoder/fac/fac-processor.h \
@@ -190,6 +201,17 @@ SOURCES += ./main.cpp \
 	   ./the-decoder/basics.cpp \
 	   ./the-decoder/data/data-processor.cpp \
 	   ./the-decoder/data/message-processor.cpp \
+	   ./the-decoder/data/data-hub.cpp \
+	   ./the-decoder/data/service-diag.cpp \
+	   ./the-decoder/data/data-carousel.cpp \
+	   ./the-decoder/data/service-info.cpp \
+	   ./the-decoder/data/journaline.cpp \
+	   ./the-decoder/data/mot.cpp \
+	   ./the-decoder/data/data-broadcast.cpp \
+	   ./the-decoder/data-inspector.cpp \
+	   ./the-decoder/journaline-window.cpp \
+	   ./the-decoder/service-info-window.cpp \
+	   ./the-decoder/mot-window.cpp \
 	   ./the-decoder/data/up-filter.cpp \
 	   ./the-decoder/fac/fac-tables.cpp \
 	   ./the-decoder/fac/fac-processor.cpp \
@@ -242,10 +264,14 @@ isEmpty(GITHASHSTRING) {
 }
 
 DESTDIR		= ./linux-bin
+INCLUDEPATH	+= /usr/include/qt6/qwt
+INCLUDEPATH	+= /usr/include/eigen3
 CONFIG		+= sdrplay-v2
 CONFIG		+= sdrplay
 CONFIG		+= rtlsdr
 CONFIG		+= hackrf
+CONFIG		+= airspy
+CONFIG		+= airspyhf
 CONFIG		+= spyServer
 CONFIG		+= card-reader
 DEFINES		+= HAVE_DRM_DECODER
@@ -255,7 +281,7 @@ CONFIG		+= fdk-aac
 
 LIBS		+= -L/usr/lib64
 LIBS		+= -L/lib64
-LIBS            += -lfaad_drm
+LIBS		+= -L/usr/lib64/fdk-aac
 INCLUDEPATH	+= /usr/include/qt5/qwt
 LIBS		+= -lqwt-qt6 -lrt -lsndfile -lsamplerate -lportaudio -lusb-1.0 -lfftw3f -ldl
 #LIBS		+= -lqwt-qt5 -lrt -lsndfile -lsamplerate -lportaudio -lusb-1.0 -lfftw3f -ldl
@@ -273,28 +299,31 @@ isEmpty(GITHASHSTRING) {
     DEFINES += GITHASH=\\\"------\\\"
 }
 
-DESTDIR		= /usr/shared/w32-programs/windows-drm2
+DESTDIR		= ./windows-bin
 CONFIG		+= sdrplay-v2
 CONFIG		+= sdrplay
 CONFIG		+= hackrf
+CONFIG		+= airspy
+CONFIG		+= airspyhf
 CONFIG		+= rtlsdr
-# includes in mingw differ from the includes in fedora linux
-INCLUDEPATH += /usr/i686-w64-mingw32/sys-root/mingw/include
-INCLUDEPATH += /usr/i686-w64-mingw32/sys-root/mingw/include/eigen3
-INCLUDEPATH += /usr/i686-w64-mingw32/sys-root/mingw/include/qt6/qwt
-INCLUDEPATH += /usr/local/include
-LIBS	+= -L/usr/i686-w64-mingw32/sys-root/mingw/lib
-LIBS	+= /usr/i686-w64-mingw32/sys-root/mingw/bin/libsndfile-1.dll
-LIBS	+= /usr/i686-w64-mingw32/sys-root/mingw/bin/libsamplerate-0.dll
+# Dxing.org build: 64-bit mingw (x86_64-w64-mingw32), cross-compiled
+# from the same Fedora container used for the Linux build, rather
+# than the original author's 32-bit (i686) toolchain.
+INCLUDEPATH += /usr/x86_64-w64-mingw32/sys-root/mingw/include
+# Eigen is header-only C++ templates with no platform-specific code,
+# so the native Fedora package's headers work fine for the mingw
+# (Windows-target) build too - no separate mingw eigen3 package needed.
+INCLUDEPATH += /usr/include/eigen3
+INCLUDEPATH += /usr/x86_64-w64-mingw32/sys-root/mingw/include/qt6/qwt
+INCLUDEPATH += /usr/x86_64-w64-mingw32/sys-root/mingw/include/fdk-aac
+LIBS	+= -L/usr/x86_64-w64-mingw32/sys-root/mingw/lib
 LIBS    += -lfftw3f
 LIBS    += -lportaudio
 LIBS    += -lqwt-qt6
-#LIBS    += -lqwt
 LIBS    += -lusb-1.0
-#LIBS    += -lsndfile
-#LIBS    += -lsamplerate
+LIBS    += -lsndfile
+LIBS    += -lsamplerate
 LIBS    += -lole32
-#CONFIG		+= -lfaad_drm
 CONFIG		+= fdk-aac
 LIBS    += -lwinmm
 }
@@ -342,6 +371,24 @@ hackrf	{
         SOURCES         += ./devices/hackrf-handler/hackrf-handler.cpp 
 }
 
+airspy	{
+	DEFINES		+= HAVE_AIRSPY
+        FORMS           += ./devices/airspy-handler/airspy-widget.ui
+        DEPENDPATH	+= ./devices/airspy-handler
+        INCLUDEPATH	+= ./devices/airspy-handler
+        HEADERS         += ./devices/airspy-handler/airspy-handler.h
+        SOURCES         += ./devices/airspy-handler/airspy-handler.cpp
+}
+
+airspyhf	{
+	DEFINES		+= HAVE_AIRSPYHF
+        FORMS           += ./devices/airspyhf-handler/airspyhf-widget.ui
+        DEPENDPATH	+= ./devices/airspyhf-handler
+        INCLUDEPATH	+= ./devices/airspyhf-handler
+        HEADERS         += ./devices/airspyhf-handler/airspyhf-handler.h
+        SOURCES         += ./devices/airspyhf-handler/airspyhf-handler.cpp
+}
+
 rtlsdr	{
 	DEFINES		+= HAVE_RTLSDR
         FORMS           += ./devices/rtlsdr-handler/rtlsdr-widget.ui
@@ -378,16 +425,13 @@ card-reader	{
 
 fdk-aac	{
 DEFINES		+= __WITH_FDK_AAC__
-#DEFINES	+= __DOWNLOAD__
 unix {
 LIBS		+= -lfdk-aac
+INCLUDEPATH	+= /usr/local/include/fdk-aac
 }
 win32 {
-#LIBS		+= -lfdk-aac-2
-DEFINES		+= __DOWNLOAD__
+LIBS		+= -lfdk-aac
 }
-#LIBS		+= -lfdk-aac -larmadillo
-INCLUDEPATH	+= /usr/local/include/fdk-aac
 HEADERS		+= ./the-decoder/data/aac-processor-fdk.h \
 	           ./the-decoder/data/xheaac-processor.h \
 	           ./the-decoder/aac-handler.h

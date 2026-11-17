@@ -1,6 +1,9 @@
 
 #include	<vector>
 #include	<chrono>
+#include	<QEvent>
+#include	<QTimer>
+#include	<QMessageBox>
 
 #include	"drm-decoder.h"
 
@@ -21,6 +24,13 @@
 #include	"sdc-processor.h"
 #include	"eqdisplay.h"
 #include	"iqdisplay.h"
+#include	"data-inspector.h"
+#include	"journaline-window.h"
+#include	"service-info-window.h"
+#include	"mot-window.h"
+#include	<QTimer>
+#include	<QToolTip>
+#include	<QCursor>
 
 #define  _USE_MATH_DEFINES
 #include	<math.h>
@@ -50,12 +60,22 @@
 	                                                       &iqBuffer),
 	                                theState (1, 3) {
 	this	-> theRadio	= theRadio;
+	theState. diag	= theDataHub. serviceDiag ();
+	theState. info	= &theSdcInfo;
+#ifdef	__WITH_FDK_AAC__
+#ifdef	__MINGW32__
+//	no libfdk-aac-2.dll next to the program: say so (after the windows are up)
+	if (!aacFunctions. ok)
+	   QTimer::singleShot (1500, this, [this] () { showAacMissing (); });
+#endif
+#endif
 	drmSettings		= s;
 	setupUi (&myFrame);
 	my_eqDisplay            = new EQDisplay (equalizerDisplay);
 	my_iqDisplay            = new IQDisplay (iqPlotter, 512);
 
 	scopeMode		= SHOW_PILOTS;
+	myFrame. installEventFilter (this);
 	myFrame. show ();
 	running. store (false);
 
@@ -88,6 +108,39 @@
 
 	connect (resetButton, SIGNAL (clicked ()),
 	         this, SLOT (handle_reset ()));
+	dataInspector	= new DataInspector (&theDataHub, &myFrame);
+	connect (dataButton, SIGNAL (clicked ()),
+	         this, SLOT (handle_dataButton ()));
+//	every complete data unit of the announced packet id goes to the
+//	Journaline decoder (it takes only its own application)
+	theDataHub. setGroupSink ([this] (int stream, const dxdata::DataGroup &g) {
+	                              theJournaline. handleGroup (stream, g);
+	                              theMot. handleGroup (stream, g);
+	                              theDb. handleGroup (stream, g);
+	                           });
+	journalineWindow = new JournalineWindow (&theJournaline, &theDataHub,
+	                                         &myFrame);
+	journalineButton -> setEnabled (false);
+	connect (journalineButton, SIGNAL (clicked ()),
+	         this, SLOT (handle_journalineButton ()));
+	serviceInfoWindow = new ServiceInfoWindow (&theSdcInfo, &myFrame);
+	connect (serviceInfoButton, SIGNAL (clicked ()),
+	         this, SLOT (handle_serviceInfoButton ()));
+//	double click on a DRM frequency of the alternative frequency list
+	connect (serviceInfoWindow, SIGNAL (tuneRequest (int32_t)),
+	         theRadio, SLOT (setFrequency (int32_t)));
+	motWindow	= new MotWindow (&theMot, &theDb, &theDataHub, &myFrame);
+	slideshowButton -> setEnabled (false);
+	motButton	-> setEnabled (false);
+	connect (slideshowButton, SIGNAL (clicked ()),
+	         this, SLOT (handle_slideshowButton ()));
+	connect (motButton, SIGNAL (clicked ()),
+	         this, SLOT (handle_motButton ()));
+	dataTimer	= new QTimer (this);
+	dataTimer	-> setInterval (1000);
+	connect (dataTimer, SIGNAL (timeout ()),
+	         this, SLOT (updateDataButtons ()));
+	dataTimer	-> start ();
 	m_worker	=
 	       new std::thread (&drmDecoder::WorkerFunction, this);
 }
@@ -98,6 +151,15 @@
 	m_worker        -> join ();
 	delete m_worker;
 	m_worker = nullptr;
+	dataTimer	-> stop ();
+	delete	journalineWindow;
+	journalineWindow = nullptr;
+	delete	serviceInfoWindow;
+	serviceInfoWindow = nullptr;
+	delete	motWindow;
+	motWindow	= nullptr;
+	delete	dataInspector;
+	dataInspector	= nullptr;
 	delete	my_eqDisplay;
 	delete	my_iqDisplay;
 }
@@ -625,16 +687,32 @@ void	drmDecoder::set_aacDataLabel	(const QString &s) {
 	aacDataLabel	-> setText (s);
 }
 
+//	The name of the service the listener has chosen goes to the field
+//	that the station list uses ("frequency save"); the button of that
+//	service is marked.
+void	drmDecoder::showChosenService	() {
+int c = theState. chosenService;
+	if (c < 0 || c > 3)
+	   c = 0;
+	selectedService	-> setText (serviceLabel [c]);
+const QString mark = "QPushButton {font-weight: bold; border: 2px solid #1a8a3a;}";
+	channel_1	-> setStyleSheet (c == 0 ? mark : QString (""));
+	channel_2	-> setStyleSheet (c == 1 ? mark : QString (""));
+}
 void	drmDecoder::set_channel_1	(const QString &s) {
+	serviceLabel [0]	= s;
 	channel_1	-> setText (s);
-	selectedService	-> setText (s);
+	showChosenService ();
 }
 
 void	drmDecoder::set_channel_2	(const QString &s) {
+	serviceLabel [1]	= s;
 	channel_2	-> setText (s);
+	showChosenService ();
 }
 
 void	drmDecoder::set_channel_3	(const QString &s) {
+	serviceLabel [2]	= s;
 	channel_3	-> setText (s);
 }
 
@@ -690,13 +768,166 @@ void    drmDecoder::handle_modeSelector (const QString &m) {
 
 void	drmDecoder::select_channel_1	() {
 	theState. activate_channel_1 ();
+	showChosenService ();
 }
 
 void	drmDecoder::select_channel_2	() {
-	theState. activate_channel_2 ();
+	if (theState. activate_channel_2 ()) {
+	   showChosenService ();
+	   return;
+	}
+//	not an audio service: the sound simply goes on, so tell why
+bool	dataService	= theState. svc [1]. dataStream >= 0 &&
+	                 theState. svc [1]. audioStream < 0;
+	QToolTip::showText (QCursor::pos (),
+	   dataService ?
+	      tr ("This service carries data, not audio, so the sound stays on "
+	          "the first service. See the Data info button.") :
+	      tr ("This service is not an audio service (or not received yet), "
+	          "so the sound stays on the first service."),
+	   &myFrame, QRect (), 6000);
+}
+
+bool	drmDecoder::eventFilter	(QObject *obj, QEvent *ev) {
+	if ((obj == &myFrame) && (ev -> type () == QEvent::Close)) {
+	   ev -> ignore ();
+	   return true;
+	}
+	return QObject::eventFilter (obj, ev);
+}
+
+QString	drmDecoder::getServiceName	() const {
+	return selectedService -> text ();
 }
 
 void	drmDecoder::handle_reset	() {
+	resetDisplay ();
+}
+
+//	Without the AAC decoder library the stations with AAC or xHE-AAC sound are
+//	silent. The library is not part of the program (its licence is separate);
+//	README.txt in the program folder says where to get it and where to put it.
+void	drmDecoder::showAacMissing	() {
+QMessageBox *m = new QMessageBox (QMessageBox::Warning,
+	   tr ("AAC decoder library not found"),
+	   tr ("The file libfdk-aac-2.dll was not found next to the program, so "
+	       "stations with AAC or xHE-AAC audio will be silent.\n\n"
+	       "Data services, Journaline, the slide show and the service "
+	       "information still work.\n\n"
+	       "Please read the section \"AAC decoder\" in README.txt in the "
+	       "program folder: it tells where to get libfdk-aac-2.dll and where "
+	       "to put it. Then restart the program."),
+	   QMessageBox::Ok, &myFrame);
+	m -> setAttribute (Qt::WA_DeleteOnClose);
+	m -> setWindowModality (Qt::NonModal);
+	m -> show ();
+}
+
+void	drmDecoder::handle_serviceInfoButton	() {
+	serviceInfoWindow	-> show ();
+	serviceInfoWindow	-> raise ();
+	serviceInfoWindow	-> activateWindow ();
+}
+
+void	drmDecoder::handle_journalineButton	() {
+	journalineWindow	-> show ();
+	journalineWindow	-> raise ();
+	journalineWindow	-> activateWindow ();
+}
+//
+//	The Journaline button is usable as soon as the SDC announces a
+//	Journaline service (the pages then arrive slowly, in a loop), or when
+//	pages have been received
+void	drmDecoder::handle_slideshowButton	() {
+	motWindow	-> showTab (0);
+	motWindow	-> show ();
+	motWindow	-> raise ();
+	motWindow	-> activateWindow ();
+}
+
+void	drmDecoder::handle_motButton	() {
+//	data broadcast packets (e.g. Chinese emergency messages) have a tab of
+//	their own; open on it when that is what this station sends
+	motWindow	-> showTab ((!theMot. hasFiles () && theDb. status (). packets > 0) ? 2 : 1);
+	motWindow	-> show ();
+	motWindow	-> raise ();
+	motWindow	-> activateWindow ();
+}
+
+void	drmDecoder::updateDataButtons	() {
+bool	have	= theJournaline. hasContent () ||
+	              theDataHub. hasApplication (dxdata::JournalineDecoder::kAppId);
+	if (journalineButton -> isEnabled () != have)
+	   journalineButton -> setEnabled (have);
+//	the button of the service information turns red during an alarm
+bool alarm = theSdcInfo. alarmActive ();
+	if (alarm != serviceInfoAlarm) {
+	   serviceInfoAlarm = alarm;
+	   serviceInfoButton -> setStyleSheet (alarm ?
+	      "QPushButton {background: #d00000; color: white; "
+	      "font-weight: bold;}" : "");
+	}
+//	SlideShow is application 0x002 (DAB domain); other MOT objects are
+//	files. A station that uses MOT directory mode (not supported yet)
+//	also enables the files button, so the window can say so
+bool	slides	= theMot. hasImages () || theDataHub. hasApplication (0x002) ||
+	              theDb. hasImage ();
+bool	motFiles	= theMot. hasFiles () || theDataHub. hasApplication (0x003) ||
+	              theMot. status (). directoryGroups > 0 ||
+	              theDb. hasContent () || theDb. status (). packets > 0;
+	if (slideshowButton -> isEnabled () != slides)
+	   slideshowButton -> setEnabled (slides);
+	if (motButton -> isEnabled () != motFiles)
+	   motButton -> setEnabled (motFiles);
+}
+
+void	drmDecoder::handle_dataButton	() {
+	dataInspector	-> show ();
+	dataInspector	-> raise ();
+	dataInspector	-> activateWindow ();
+}
+//
+//	Clear every "we are locked on a station" indication on screen
+//	and force the OFDM/FAC/SDC search to start over. Called both
+//	by the reset button and automatically whenever the user tunes
+//	to a new frequency, so a previous station's name/indicators
+//	are not left showing while a new (possibly absent) signal is
+//	being searched for.
+void	drmDecoder::resetDisplay	() {
+	theDataHub. reset ();
+	theJournaline. clear ();
+	theSdcInfo. clear ();
+	theMot. clear ();
+	theDb. clear ();
+	timeSyncLabel	-> setStyleSheet ("QLabel {background-color:red}");
+	facSyncLabel	-> setStyleSheet ("QLabel {background-color:red}");
+	sdcSyncLabel	-> setStyleSheet ("QLabel {background-color:red}");
+	faadSyncLabel	-> setStyleSheet ("QLabel {background-color:red}");
+
+	messageLabel	-> setText ("");
+	timeLabel	-> setText ("");
+	aacDataLabel	-> setText ("");
+	audioModelabel	-> setText ("");
+	datacoding	-> setText ("");
+	channel_1	-> setText ("");
+	channel_2	-> setText ("");
+	channel_3	-> setText ("");
+	channel_4	-> setText ("");
+	for (int i = 0; i < 4; i ++)
+	   serviceLabel [i]. clear ();
+	theState. chosenService	= 0;	// a new station: back to the first service
+	selectedService	-> setText ("");
+	channel_1	-> setStyleSheet ("");
+	channel_2	-> setStyleSheet ("");
+	modeIndicator		-> setText ("");
+	spectrumIndicator	-> setText ("");
+
+	fac_mer		-> display (0);
+	sdc_mer		-> display (0);
+	msc_mer		-> display (0);
+	show_small_offset	-> display (0);
+	show_int_offset		-> display (0);
+
 	fprintf (stderr, "Going to signal\n");
 	my_Reader.signal ();
 }

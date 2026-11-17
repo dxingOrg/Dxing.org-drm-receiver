@@ -22,6 +22,11 @@
  */
 #
 //#include	<windows.h>
+#include	<stdio.h>
+#include	<string>
+#include	<string.h>
+#include	"service-diag.h"
+#include	"service-info.h"
 #include	"sdc-include.h"
 #include	"sdc-streamer.h"
 #include	"sdc-processor.h"
@@ -267,11 +272,19 @@ int16_t	lengthofDatafield	= (size - 16 - 4) / 8;
 
 	   if ((dataType == 0) && (lengthofBody == 0))
 	      break;
-	   if (index + lengthofBody < lengthofDatafield * 8 + 8) // sanity check
+	   if (index + lengthofBody < lengthofDatafield * 8 + 8) { // sanity check
+	      if (theState -> diag != nullptr)
+	         theState -> diag -> onSdcEntity (dataType, versionFlag,
+	                                          lengthofBody, &v [index]);
+	      if (theState -> info != nullptr)
+	         theState -> info -> handleEntity (dataType, versionFlag,
+	                                           &v [index],
+	                                           lengthofBody * 8 + 4);
 	      set_SDCData (theState,
 	                   &v [index],
 	                   afs,
 	                   dataType, versionFlag, lengthofBody);
+	   }
 //
 //	   step over contents
 //	   Note that, according to std 6.4.3, the length of the body
@@ -280,7 +293,10 @@ int16_t	lengthofDatafield	= (size - 16 - 4) / 8;
 	   index	+= lengthofBody * 8 + 4;
 	}
 	theState -> set =  sdcCorrect;
-
+	if (theState -> diag != nullptr) {
+	   theState -> diag -> onSdcBlock (afs);
+	   theState -> publishDiag ();
+	}
 }
 //
 //	SDC data is organized similar to the FIC data in DAB, i.e. a
@@ -337,37 +353,52 @@ uint8_t	language [3], country [2];
 	   case 1:	// label entity, first 4 bits are:
 	      shortId	= get_SDCBits (v, 0, 2);
 	      rfu	= get_SDCBits (v, 2, 2);
-//	for now:
-	      (void)shortId; (void)rfu;
+	      (void)rfu;
 //	the "full" bits are
 	      for (i = 0; i < lengthofBody; i ++) 
 	          s. push_back (get_SDCBits (v, 4 + 8 * i, 8));
 	      s. push_back (char (0));
+//
+//	A label belongs to a SERVICE (the short id), not to a stream: two
+//	services can share one stream (e.g. the same sound under two names),
+//	so looking for a stream with that short id loses labels.
+//
+//	"s" ends with the NUL we pushed above. It must not reach the screen:
+//	Linux fonts silently skip a NUL character, Windows draws it as a
+//	"missing glyph" box after the station name. std::string (s. c_str ())
+//	stops at the first NUL.
 	      if (lengthofBody > 1) {
-	         for (i = 0; i < theState -> numofStreams; i ++) 
-	            if ((theState -> streams [i]. inUse) &&
-	                (theState -> streams [i]. shortId == shortId)) {
-	               if (theState -> streams [i]. serviceName [0] != 0)
-	                  break;
-	               strcpy (theState -> streams [i]. serviceName,
-	                                          s. c_str ());
-	               switch (shortId) {
-	                  case 0:
-	                     set_channel_1 (QString::fromStdString (s));
-	                     break;
-	                  case 1:
-	                     set_channel_2 (QString::fromStdString (s));
-	                     break;
-	                  case 2:
-	                     set_channel_3 (QString::fromStdString (s));
-	                     break;
-	                  case 3:
-	                     set_channel_4 (QString::fromStdString (s));
-	                     break;
-	               }
-	               return;
-	            }
+	         std::string text (s. c_str ());
+	         char *dst = theState -> svc [shortId]. label;
+	         if (text == std::string (dst)) {	// the SDC repeats labels
+	            if (theState -> diag != nullptr)
+	               theState -> diag -> onLabel (shortId, text,
+	                                   "repeat, already shown");
+	            return;
 	         }
+	         strncpy (dst, text. c_str (),
+	                       sizeof (theState -> svc [shortId]. label) - 1);
+	         dst [sizeof (theState -> svc [shortId]. label) - 1] = 0;
+	         if (theState -> diag != nullptr)
+	            theState -> diag -> onLabel (shortId, text,
+	               "stored for service " + std::to_string (shortId) +
+	               " and sent to button " + std::to_string (shortId + 1));
+	         QString label = QString::fromStdString (text);
+	         switch (shortId) {
+	            case 0:
+	               set_channel_1 (label);
+	               break;
+	            case 1:
+	               set_channel_2 (label);
+	               break;
+	            case 2:
+	               set_channel_3 (label);
+	               break;
+	            case 3:
+	               set_channel_4 (label);
+	               break;
+	         }
+	      }
 	      return;
 
 	   case 2:	// conditional access parameters
@@ -387,6 +418,7 @@ uint8_t	language [3], country [2];
 	                                        get_SDCBits (v, 0, 2);
 	         theState  -> streams [index]. streamId	=
 	                                        get_SDCBits (v, 2, 2);
+	         theState  -> svc [get_SDCBits (v, 0, 2)]. dataStream = index;
 	         theState  -> streams [index]. packetModeInd	= get_SDCBits (v, 4, 1);
 	         if (theState -> streams [index]. packetModeInd == 0) {
 	            // synchronous stream Mode
@@ -407,6 +439,8 @@ uint8_t	language [3], country [2];
 	                                          get_SDCBits (v, 9, 3);
 	            theState -> streams [index]. packetLength =
 	                                          get_SDCBits (v, 12, 8);
+	            theState -> streams [index]. dataPacketLength =
+	                                          theState -> streams [index]. packetLength;
 	
 	            if (theState -> streams [index]. domain == 0)
 	               theState -> streams [index]. applicationId =
@@ -433,15 +467,14 @@ uint8_t	language [3], country [2];
 	   case 8:	// time and date information
 	      {  int16_t hours		= get_SDCBits (v, 17, 5);
 	         int16_t minutes	= get_SDCBits (v, 22, 6);
-	         if (lengthofBody > 30) {
-	            int16_t offset = get_SDCBits (v, 31, 5);
-	            uint8_t f     = get_SDCBits (v, 30, 1);
-	            hours += f ? - offset : offset;
-	         }
-	         std::string t = std::to_string (hours);
-	         t. append (":");
-	         t. append (std::to_string (minutes));
-	         set_timeLabel (QString::fromStdString (t));
+//	The time is UTC. (The old test "lengthofBody > 30" was never true, and
+//	the local time offset is in half hours.) The window "Service info"
+//	shows date, UTC and local time; here only UTC, two digits each.
+	         if (hours > 23 || minutes > 59)
+	            return;
+	         char tb [32];
+	         snprintf (tb, sizeof (tb), "%02d:%02d UTC", hours, minutes);
+	         set_timeLabel (QString::fromStdString (std::string (tb)));
 	      }
 	      return;
 
@@ -454,6 +487,7 @@ uint8_t	language [3], country [2];
 	                                      = get_SDCBits (v, 0, 2);
 	         theState -> streams [index]. streamId
 	                                      = get_SDCBits (v, 2, 2);
+	         theState -> svc [get_SDCBits (v, 0, 2)]. audioStream = index;
 	         theState -> streams [index]. audioCoding
 	                                      = get_SDCBits (v, 4, 2);
 	         theState -> streams [index]. SBR_flag

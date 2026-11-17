@@ -15,9 +15,9 @@ decode. The DRM decoder itself is the one of the original.
 
 ![overview](docs/screenshot.png)
 
-![overview](docs/17500 Audio.png)
+![overview](docs/17500Audio.png)
 
-![overview](docs/tdf Files.png)
+![overview](docs/tdfFiles.png)
 
 ## Download
 

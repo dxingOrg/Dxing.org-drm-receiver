@@ -1,7 +1,36 @@
+# build output
+release/
+debug/
+build/
+windows-bin/
+linux-bin/
+dist/
 *.o
-.*.swp
+*.obj
+ui_*.h
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+Makefile*
 .qmake.stash
-build
-linux-bin
+*.log
+build.log
 
+# binaries and recordings are never part of the source
+*.exe
+*.dll
+*.zip
+*.wav
+*.pdb
+*.iobj
 
+# personal data of the program
+.drm-radio*
+data-groups*.txt
+Dxing-DRM/
+
+# editors
+.*.swp
+*.swp
+.vscode/
+.idea/

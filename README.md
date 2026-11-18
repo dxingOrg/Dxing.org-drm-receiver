@@ -13,25 +13,25 @@ decode. The DRM decoder itself is the one of the original.
 > **Status: experimental, hobby project.** It is tested on the signals and receivers
 > listed below, not more. See [Known limitations](#known-limitations).
 
-BBC World Service
+BBC World Service <br>
 ![overview](docs/screenshot.png)
 
-
+CNR <br>
 ![overview](docs/17500Audio.png)
 
 TDF <br>
 ![overview](docs/tdfjpg.png)
 
-Music for Joy
+Music for Joy <br>
 ![overview](docs/musicforJoy.png)
 
-SNR Tiganesti E1
+SNR Tiganesti E1 <br>
 ![overview](docs/SNRTE1.png)
 
-TDF
+TDF <br>
 ![overview](docs/tdfFiles.png)
 
-M4J
+M4J <br>
 ![overview](docs/m4j.png)
 
 ## Download

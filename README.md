@@ -13,13 +13,21 @@ decode. The DRM decoder itself is the one of the original.
 > **Status: experimental, hobby project.** It is tested on the signals and receivers
 > listed below, not more. See [Known limitations](#known-limitations).
 
+BBC World Service
 ![overview](docs/screenshot.png)
 
 ![overview](docs/17500Audio.png)
 
+TDF
 ![overview](docs/tdfjpg.png)
 
+![overview](docs/musicforJoy.png)
+
+![overview](docs/SNRTE1.png)
+
 ![overview](docs/tdfFiles.png)
+
+![overview](docs/m4j.png)
 
 ## Download
 
@@ -101,7 +109,7 @@ container, and `collect-dlls.sh` / `make-portable.sh` to make the package.
 
 - Receivers available to the maintainer: AirSpy HF+ Discovery, AirSpy R2 (+SpyVerter),
   HackRF, RTL-SDR v3. Tests were done with live reception and IQ recordings of BBC WS
-  (Journaline), TDF (MOT), the Chinese DRM service on 17500 kHz, Musik 4 Joy and CNR-1.
+  (Journaline), TDF (MOT), the Chinese DRM service on 17500 kHz, Music 4 Joy and CNR-1.
 - **Not tested**: SDRplay (64-bit path), SpyServer, sound card input.
 - Alternative frequencies, announcements and the alarm bits are read as the standard
   describes but only tested with synthetic data; the meaning of the announcement

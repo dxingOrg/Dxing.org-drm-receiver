@@ -144,3 +144,10 @@ Third-party libraries used by the program, each under its own licence: Qt 6, Qwt
 FFTW, PortAudio, libsndfile, libsamplerate, libusb and the receiver drivers
 (libairspy, libairspyhf, libhackrf, librtlsdr). The **Fraunhofer FDK AAC** codec
 (libfdk-aac) is **not distributed with this program**; you add it yourself (see above).
+
+
+## AI-assisted development
+
+This fork was developed in collaboration with the AI assistant **Claude Sonnet 5.5**
+(Anthropic). AI was used for code generation and refactoring, tests, and documentation.
+All changes were reviewed, tested, and approved by humans.

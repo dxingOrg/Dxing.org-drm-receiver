@@ -306,6 +306,9 @@ CONFIG		+= hackrf
 CONFIG		+= airspy
 CONFIG		+= airspyhf
 CONFIG		+= rtlsdr
+# Dxing.org: the sound card input (IQ through a sound card or a virtual audio
+# cable, 96 kHz). PortAudio is linked anyway for the sound output.
+CONFIG		+= card-reader
 # Dxing.org build: 64-bit mingw (x86_64-w64-mingw32), cross-compiled
 # from the same Fedora container used for the Linux build, rather
 # than the original author's 32-bit (i686) toolchain.

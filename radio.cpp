@@ -79,7 +79,7 @@
 #define	D_AIRSPYHF	"AirSpy HF+ Discovery"
 #define	D_RTLSDR	"RTL-SDR"
 #define	D_SPYSERVER	"spyserver_client"
-#define	D_CARDREADER	"card-reader"
+#define	D_CARDREADER	"Sound card (IQ, 96 kHz)"
 static 
 const char *deviceTable [] = {
 #ifdef	HAVE_SDRPLAY_V2

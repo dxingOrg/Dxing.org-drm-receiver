@@ -4,7 +4,13 @@ All notable changes of this fork compared with the original
 [drm-receiver](https://github.com/JvanKatwijk/drm-receiver). Version numbers are those
 of the Windows packages. (Versions up to 2.7 are summarised in one entry.)
 
-## [3.3] - unreleased
+## [3.4]
+### Added
+- Sound card input (IQ through a sound card or a virtual audio cable, 96 kHz) is
+  now available in the Windows build; the menu entry is "Sound card (IQ, 96 kHz)".
+  The frequency is set in the program that feeds the cable.
+
+## [3.3]
 ### Changed
 - If `libfdk-aac-2.dll` cannot be loaded, the program now says so (a message with the
   missing file and a pointer to the README) instead of staying silent.
